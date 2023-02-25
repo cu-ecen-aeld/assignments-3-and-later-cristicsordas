@@ -31,6 +31,7 @@ int main(int argc, char**argv)
         syslog(LOG_ERR, "Error. No bytes written to the file");
         return 1;
     }
+    fclose(fp);
 
     return 0;
 }
