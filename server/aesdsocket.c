@@ -13,15 +13,255 @@
 #include <stdint.h>
 #include <signal.h>
 #include <arpa/inet.h>
+#include <stdbool.h>
+#include <pthread.h>
+#include <time.h>
+#include <sys/time.h>
 
-int server_running = 0;
+bool server_running = false;
 static const char* FILE_NAME = "/var/tmp/aesdsocketdata";
+pthread_mutex_t mutex;
+
+struct Node
+{
+    pthread_t threadId;
+    int socketClient;
+    bool completed;
+    struct Node *next;
+};
+
+struct Node *head = NULL;
+
+void addToList(struct Node * node)
+{
+    node->next = head;
+    head = node;
+}
+
+void deleteNode(struct Node** head_ref, pthread_t key)
+{
+    struct Node *temp = *head_ref, *prev;
+ 
+    if (temp != NULL && temp->threadId == key) {
+        *head_ref = temp->next; // Changed head
+        free(temp); // free old head
+        return;
+    }
+ 
+    while (temp != NULL && temp->threadId != key) {
+        prev = temp;
+        temp = temp->next;
+    }
+ 
+    if (temp == NULL)
+        return;
+ 
+    prev->next = temp->next;
+ 
+    free(temp); // Free memory
+}
+
+void joinCompletedThreads()
+{
+    struct Node *it = head;
+    while(it != NULL)
+    {
+        if(it->completed == true)
+        {
+            pthread_t threadId = it->threadId;
+            printf("join %d \n", it->threadId);
+            void * thread_rtn = NULL;
+            pthread_join(it->threadId, &thread_rtn);
+            printf("joined %d \n", it->threadId);
+            it = it->next;
+            deleteNode(&head, threadId);
+        }
+        else
+        {
+            it = it->next;
+        }
+    }
+}
+
+void printList()
+{
+    struct Node *it = head;
+    while(it != NULL)
+    {
+        printf("should not come here. thread id %d\n", it->threadId);
+        it = it->next;
+    }
+}
+
+
+void setAllThreadsCompleted()
+{
+    struct Node *it = head;
+    while(it != NULL)
+    {
+        it->completed = true;
+        pthread_cancel(it->threadId);
+        it = it->next;
+    }    
+}
+
+void* threadfunc(void* thread_param)
+{
+    struct Node *node = (struct Node *)thread_param;
+    FILE *fp = NULL;
+    int client = node->socketClient;
+
+    static const int packet_size = 1024*1024*sizeof(int);
+    char buffPacket[packet_size];
+
+    printf("thread running %d\n", node->threadId);
+
+    int position = 0;
+    while(!node->completed)
+    {
+        printf("run client %d \n", node->completed);
+
+        static const int buff_size = 100;
+        char tmp[buff_size];
+        int length = recv(client, &tmp, buff_size, 0);
+        if (length != 0)
+        {
+            memcpy(buffPacket+position, &tmp, length);
+            position += length;
+            if(tmp[length - 1] == '\n')
+            {
+                printf("data received\n");
+                printf("length %d\n", position);
+
+                fp = fopen(FILE_NAME, "ab");
+                if(fp == NULL)
+                {
+                    //LOG
+                    printf("Error. The file %s cannot be open", FILE_NAME);
+                    node->completed = true;
+                }
+
+                pthread_mutex_lock(&mutex);
+                size_t nr_bytes = fwrite((char *)buffPacket, 1, position, fp);
+                pthread_mutex_unlock(&mutex);
+                if(nr_bytes == 0)
+                {
+                    printf("Error. No bytes written to the file");
+                    node->completed = true;
+                }
+                printf("bytes written %d\n", nr_bytes);
+
+                fclose(fp);
+
+                printf("open file\n");
+                fp = fopen(FILE_NAME, "r");
+                if(fp == NULL)
+                {
+                    printf("Error. The file %s cannot be open", FILE_NAME);
+                    node->completed = true;
+                }
+                printf("send to client\n");
+                size_t len = 0;
+                ssize_t read;
+                char *buff_ptr=NULL;
+                while ((read = getline(&buff_ptr, &len, fp)) != -1) 
+                {
+                    // printf("Retrieved line of length %d:\n", read);
+                    send(client, buff_ptr, read, 0);
+                }
+                if(buff_ptr != NULL)
+                {
+                    free(buff_ptr);
+                }
+
+                if(fp != NULL)
+                {
+                    fclose(fp);
+                }
+
+                position = 0;
+            }
+        }
+        else
+        {
+            printf("client closed\n");
+            node->completed = true;
+        }
+    }
+
+    printf("thread %d stopped\n", client);
+}
+
+void* threadTimerfunc(void* thread_param)
+{
+    struct Node *node = (struct Node *)thread_param;
+    const uint32_t time_to_sleep_ms = 10*1000; //10 seconds
+    struct timeval tv;
+    struct tm *ptm;
+    char time_string[40];
+    FILE *fp = NULL;
+
+    while(!node->completed)
+    {
+        printf("Sleeping \n");
+        usleep(1000 * time_to_sleep_ms);
+        printf("After sleeping \n");
+
+        memset(time_string, 0, sizeof(time_string));
+        gettimeofday(&tv, NULL);
+        ptm = localtime(&tv.tv_sec);
+        strftime(time_string, sizeof(time_string), "timestamp:%a %d %b %Y %T %z\n", ptm);
+
+        fp = fopen(FILE_NAME, "a");
+        if(fp == NULL)
+        {
+            printf("Error. The file %s cannot be open", FILE_NAME);
+            node->completed = true;
+        }
+
+        pthread_mutex_lock(&mutex);
+        size_t nr_bytes = fwrite((char *)time_string, 1, sizeof(time_string), fp);
+        pthread_mutex_unlock(&mutex);
+        if(nr_bytes == 0)
+        {
+            printf("Error. No bytes written to the file");
+            node->completed = true;
+        }
+        printf("bytes written %d\n", nr_bytes);
+
+        if(fp != NULL)
+        {
+            fclose(fp);
+        }
+    }
+}
+
+void startTimer()
+{
+    struct Node *nodeTimer = (struct Node *)malloc(sizeof(struct Node));
+    nodeTimer->socketClient = 0;
+    nodeTimer->completed = false;
+    pthread_t threadTimerId;
+
+    if(pthread_create(&threadTimerId, NULL, threadTimerfunc, nodeTimer) == 0)
+    {
+        printf("timer thread id %d\n", threadTimerId);
+        nodeTimer->threadId = threadTimerId;
+        addToList(nodeTimer);
+    }
+    else
+    {
+        free(nodeTimer);
+    }
+}
 
 void handler(int sig, siginfo_t *info, void *context)
 {
+    printf("handler\n");
     if((sig == SIGINT) || (sig == SIGTERM))
     {
-        server_running = 1;
+        server_running = false;
+        printf("stop server\n");
     }
 }
 
@@ -30,8 +270,10 @@ int main(int argc, char *argv[])
     int listenfd = 0, connfd = 0, s = 0;
     struct addrinfo hints;
     struct addrinfo *ret_addr_info;
-    FILE *fp = NULL;
+    server_running = true;
 
+    head = NULL;
+    
     int start_daemon = 0;
     if(argc == 2)
     {
@@ -43,6 +285,7 @@ int main(int argc, char *argv[])
 
     openlog(NULL, 0, LOG_USER);
     memset(&hints, 0, sizeof(hints));
+    pthread_mutex_init(&mutex, NULL);
 
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
@@ -114,7 +357,9 @@ int main(int argc, char *argv[])
 
     remove(FILE_NAME);
 
-    while(server_running == 0)
+    startTimer();
+
+    while(server_running)
     {
         struct sockaddr_in addr_client;
         socklen_t client_length = 0;
@@ -129,81 +374,35 @@ int main(int argc, char *argv[])
             ((addr_client.sin_addr.s_addr&0xFF000000)>>24));
             printf(buff);
             syslog(LOG_DEBUG, buff);
-        }
 
-        static const int packet_size = 1024*1024;
-        char *buffPacket = (char*)malloc(packet_size*sizeof(int));
-        if(buffPacket == 0)
-        {
-            printf("error allocating memory\n");
-            return -1;
-        }
-        int position = 0;
+            pthread_t threadId;
 
-        int client_running = 0;
-        while(server_running == 0 && client_running == 0)
-        {
-            static const int buff_size = 100;
-            char *tmp = malloc(buff_size);
-            int length = recv(client, tmp, buff_size, 0);
-            if (length != 0)
+            struct Node *newElem = (struct Node *)malloc(sizeof(struct Node));
+            newElem->socketClient = client;
+            newElem->completed = false;
+            if(pthread_create(&threadId, NULL, threadfunc, newElem) == 0)
             {
-                memcpy(buffPacket+position, tmp, length);
-                position += length;
-                if(tmp[length - 1] == '\n')
-                {
-                    printf("data received\n");
-                    printf("length %d\n", position);
-
-                    //write buffPacket to file
-                    fp = fopen(FILE_NAME, "ab");
-                    if(fp == NULL)
-                    {
-                        //LOG
-                        printf("Error. The file %s cannot be open", FILE_NAME);
-                        return -1;
-                    }
-
-                    size_t nr_bytes = fwrite((char *)buffPacket, 1, position, fp);
-                    if(nr_bytes == 0)
-                    {
-                        printf("Error. No bytes written to the file");
-                        return 1;
-                    }
-                    printf("bytes written %d\n", nr_bytes);
-
-                    fclose(fp);
-
-                    printf("open file\n");
-                    fp = fopen(FILE_NAME, "r");
-                    if(fp == NULL)
-                    {
-                        printf("Error. The file %s cannot be open", FILE_NAME);
-                        return -1;
-                    }
-                    printf("send to client\n");
-                    size_t len = 0;
-                    ssize_t read;
-                    char *buff = malloc(1000);
-                    while ((read = getline(&buff, &len, fp)) != -1) 
-                    {
-                        printf("Retrieved line of length %d:\n", read);
-                        send(client, buff, read, 0);
-                    }
-                    free(buff);
-
-                    fclose(fp);
-                    position = 0;
-                }
+                newElem->threadId = threadId;
+                printf("thread created %d\n",threadId);
+                addToList(newElem);
+                printf("added to list\n");
             }
             else
             {
-                client_running = 1;
+                printf("error creating thread\n");
+                free(newElem);
             }
-            free(tmp);
+            printf("join completed \n");
+            joinCompletedThreads();
         }
-        free(buffPacket);
+        printf("server cyclic\n");
     }
+
+    printf("stop threads\n");
+    setAllThreadsCompleted();
+    printf("join threads\n");
+    joinCompletedThreads();
+    printList();
 
     printf("Server stoppped\n");
 
