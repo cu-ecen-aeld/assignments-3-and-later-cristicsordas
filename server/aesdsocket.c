@@ -357,8 +357,6 @@ int main(int argc, char *argv[])
 
     remove(FILE_NAME);
 
-    startTimer();
-
     while(server_running)
     {
         struct sockaddr_in addr_client;
@@ -366,6 +364,11 @@ int main(int argc, char *argv[])
         int client = accept(listenfd, (struct sockaddr_in*)&addr_client, &client_length);
         if(client > 0)
         {
+            if(head == NULL)
+            {
+                startTimer();
+            }
+
             char buff[50];
             sprintf(buff, "Accepted connection from : %d.%d.%d.%d\n",             
             (addr_client.sin_addr.s_addr&0xFF),
