@@ -372,8 +372,8 @@ int main(int argc, char *argv[])
             ((addr_client.sin_addr.s_addr&0xFF00)>>8),
             ((addr_client.sin_addr.s_addr&0xFF0000)>>16),
             ((addr_client.sin_addr.s_addr&0xFF000000)>>24));
-            printf(buff);
-            syslog(LOG_DEBUG, buff);
+            printf("%s", buff);
+            //syslog(LOG_DEBUG, buff);
 
             pthread_t threadId;
 

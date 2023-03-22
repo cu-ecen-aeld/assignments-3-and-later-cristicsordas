@@ -3,7 +3,7 @@ TARGET ?= aesdsocket
 OBJS := $(SRC:.c=.o)
 CROSS_COMPILE:=
 CC ?= $(CROSS_COMPILE)gcc
-CFLAGS?= -g
+CFLAGS?= -g -Wall
 LDFLAGS?=-pthread -lrt
 
 all: $(TARGET)
