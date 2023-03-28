@@ -16,6 +16,16 @@
 
 #include "aesd-circular-buffer.h"
 
+uint8_t getNextPos(uint8_t current_pos)
+{
+    uint8_t next_pos = 0;
+    if(current_pos != AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED-1)
+    {
+        next_pos = current_pos + 1;
+    }
+    return next_pos;
+}
+
 /**
  * @param buffer the buffer to search for corresponding offset.  Any necessary locking must be performed by caller.
  * @param char_offset the position to search for in the buffer list, describing the zero referenced
@@ -29,10 +39,23 @@
 struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
             size_t char_offset, size_t *entry_offset_byte_rtn )
 {
-    /**
-    * TODO: implement per description
-    */
-    return NULL;
+    uint8_t it = buffer->out_offs;
+    size_t it_size=0, prev_size=0;
+    struct aesd_buffer_entry *entry = NULL;
+    for(int i=0; i<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++)
+    {
+        it_size += buffer->entry[it].size;
+        if((char_offset >= prev_size) && (char_offset < it_size))
+        {
+            *entry_offset_byte_rtn = char_offset - prev_size;
+            entry = &buffer->entry[it];
+            break;
+        }
+        prev_size = it_size;
+        it = getNextPos(it);
+    }
+
+    return entry;
 }
 
 /**
@@ -44,9 +67,16 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 */
 void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
-    /**
-    * TODO: implement per description
-    */
+    if(buffer->full)
+    {
+        buffer->out_offs = getNextPos(buffer->in_offs);
+    }
+
+    buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
+    buffer->entry[buffer->in_offs].size = add_entry->size;
+
+    buffer->in_offs = getNextPos(buffer->in_offs);
+    buffer->full = (buffer->in_offs == buffer->out_offs);
 }
 
 /**
@@ -55,4 +85,7 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
 void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer)
 {
     memset(buffer,0,sizeof(struct aesd_circular_buffer));
+    buffer->in_offs = 0;
+    buffer->out_offs = 0;
+    buffer->full = false;
 }
