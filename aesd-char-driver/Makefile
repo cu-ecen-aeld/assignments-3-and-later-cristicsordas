@@ -6,7 +6,7 @@
 ifeq ($(DEBUG),y)
   DEBFLAGS = -O -g -DSCULL_DEBUG # "-O" is needed to expand inlines
 else
-  DEBFLAGS = -O2
+  DEBFLAGS = -O2 
 endif
 
 EXTRA_CFLAGS += $(DEBFLAGS)
