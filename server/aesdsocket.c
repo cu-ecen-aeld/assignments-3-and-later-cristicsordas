@@ -18,8 +18,14 @@
 #include <time.h>
 #include <sys/time.h>
 
+#define USE_AESD_CHAR_DEVICE
+
 bool server_running = false;
+#ifdef USE_AESD_CHAR_DEVICE
+static const char* FILE_NAME = "/dev/aesdchar";
+#else
 static const char* FILE_NAME = "/var/tmp/aesdsocketdata";
+#endif
 pthread_mutex_t mutex;
 
 struct Node
@@ -355,7 +361,9 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+#ifndef USE_AESD_CHAR_DEVICE
     remove(FILE_NAME);
+#endif
 
     while(server_running)
     {
@@ -364,10 +372,12 @@ int main(int argc, char *argv[])
         int client = accept(listenfd, (struct sockaddr_in*)&addr_client, &client_length);
         if(client > 0)
         {
+            #ifndef USE_AESD_CHAR_DEVICE
             if(head == NULL)
             {
                 startTimer();
             }
+            #endif
 
             char buff[50];
             sprintf(buff, "Accepted connection from : %d.%d.%d.%d\n",             
