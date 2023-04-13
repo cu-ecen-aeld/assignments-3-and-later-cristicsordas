@@ -14,7 +14,7 @@
 #define AESD_MAJOR 0   /* dynamic major by default */
 #endif
 
-#define AESD_DEBUG 1  //Remove comment on this line to enable debug
+#define AESD_DEBUG
 
 #undef PDEBUG             /* undef it, just in case */
 #ifdef AESD_DEBUG

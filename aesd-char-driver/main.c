@@ -92,7 +92,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         size_buff = count;
     }
     PDEBUG("read, copy to user, size: %lld",size_buff);
-    bytes_not_copied = copy_to_user(buf, entry->buffptr+size_buff, size_buff);
+    bytes_not_copied = copy_to_user(buf, entry->buffptr+entry_offset, size_buff);
     retval = size_buff - bytes_not_copied;
     *f_pos = *f_pos + retval;
 
@@ -206,11 +206,13 @@ int aesd_init_module(void)
 {
     dev_t dev = 0;
     int result;
+    PDEBUG("open");
+
     result = alloc_chrdev_region(&dev, aesd_minor, 1,
             "aesdchar");
     aesd_major = MAJOR(dev);
     if (result < 0) {
-        printk(KERN_WARNING "Can't get major %d\n", aesd_major);
+        PDEBUG(KERN_WARNING "Can't get major %d\n", aesd_major);
         return result;
     }
     memset(&aesd_device,0,sizeof(struct aesd_dev));
