@@ -121,7 +121,7 @@ void* threadfunc(void* thread_param)
     
     printf("thread started buff\n");
 
-    static const int packet_size = 1024*1024*sizeof(int);
+    static const int packet_size = 1024*sizeof(int);
     char buffPacket[packet_size];
 
     printf("thread running %d\n", node->threadId);
