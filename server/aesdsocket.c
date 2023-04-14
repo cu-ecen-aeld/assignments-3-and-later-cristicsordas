@@ -113,9 +113,13 @@ void setAllThreadsCompleted()
 
 void* threadfunc(void* thread_param)
 {
+    printf("thread started\n");
+
     struct Node *node = (struct Node *)thread_param;
     FILE *fp = NULL;
     int client = node->socketClient;
+    
+    printf("thread started buff\n");
 
     static const int packet_size = 1024*1024*sizeof(int);
     char buffPacket[packet_size];
@@ -369,7 +373,7 @@ int main(int argc, char *argv[])
     {
         struct sockaddr_in addr_client;
         socklen_t client_length = 0;
-        int client = accept(listenfd, (struct sockaddr_in*)&addr_client, &client_length);
+        int client = accept(listenfd, (struct sockaddr*)&addr_client, &client_length);
         if(client > 0)
         {
             #ifndef USE_AESD_CHAR_DEVICE
