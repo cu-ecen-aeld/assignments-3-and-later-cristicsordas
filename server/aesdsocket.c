@@ -18,7 +18,7 @@
 #include <time.h>
 #include <sys/time.h>
 
-#define USE_AESD_CHAR_DEVICE
+/*#define USE_AESD_CHAR_DEVICE */
 
 bool server_running = false;
 #ifdef USE_AESD_CHAR_DEVICE
