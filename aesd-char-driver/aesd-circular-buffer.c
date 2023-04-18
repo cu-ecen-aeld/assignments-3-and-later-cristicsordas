@@ -72,7 +72,7 @@ char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const 
     if(buffer->full)
     {
         buffer->out_offs = getNextPos(buffer->in_offs);
-        ptr_replaced_entry = buffer->entry[buffer->in_offs].buffptr;
+        ptr_replaced_entry = (char *)buffer->entry[buffer->in_offs].buffptr;
     }
 
     buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
