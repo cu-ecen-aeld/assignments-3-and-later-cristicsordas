@@ -73,10 +73,12 @@ char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const 
     {
         buffer->out_offs = getNextPos(buffer->in_offs);
         ptr_replaced_entry = (char *)buffer->entry[buffer->in_offs].buffptr;
+        buffer->size -= buffer->entry[buffer->in_offs].size;
     }
 
     buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
     buffer->entry[buffer->in_offs].size = add_entry->size;
+    buffer->size += add_entry->size;
 
     buffer->in_offs = getNextPos(buffer->in_offs);
     buffer->full = (buffer->in_offs == buffer->out_offs);
@@ -92,4 +94,5 @@ void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer)
     buffer->in_offs = 0;
     buffer->out_offs = 0;
     buffer->full = false;
+    buffer->size = 0;
 }

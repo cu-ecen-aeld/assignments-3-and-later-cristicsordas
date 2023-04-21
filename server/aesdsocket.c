@@ -17,6 +17,7 @@
 #include <pthread.h>
 #include <time.h>
 #include <sys/time.h>
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 #define USE_AESD_CHAR_DEVICE
 
@@ -34,6 +35,12 @@ struct Node
     int socketClient;
     bool completed;
     struct Node *next;
+};
+
+enum action_socket
+{
+    action_write = 0,
+    action_seek = 1
 };
 
 struct Node *head = NULL;
@@ -111,6 +118,24 @@ void setAllThreadsCompleted()
     }    
 }
 
+enum action_socket get_action(char *buff, struct aesd_seekto *seek_to)
+{
+    enum action_socket action = action_write;
+
+    const char *LSEEK_ID = "AESDCHAR_IOCSEEKTO:";
+    if((buff != NULL) && (seek_to != NULL))
+    {
+        if(strncmp((const char*)buff, LSEEK_ID, strlen(LSEEK_ID))==0)
+        {
+            printf("seek to action received\n");
+            action = action_seek;
+            sscanf(buff, "AESDCHAR_IOCSEEKTO:%d,%d", &((*seek_to).write_cmd), &((*seek_to).write_cmd_offset));
+        }
+    }
+
+    return action;
+}
+
 void* threadfunc(void* thread_param)
 {
     printf("thread started\n");
@@ -143,32 +168,59 @@ void* threadfunc(void* thread_param)
                 printf("data received\n");
                 printf("length %d\n", position);
 
-                fp = fopen(FILE_NAME, "ab");
-                if(fp == NULL)
+                struct aesd_seekto seek_to;
+                enum action_socket action = action_write;
+                action = get_action(buffPacket, &seek_to);
+
+                if(action == action_write)
                 {
-                    //LOG
-                    printf("Error. The file %s cannot be open", FILE_NAME);
-                    node->completed = true;
+                    fp = fopen(FILE_NAME, "a+");
+                    if(fp == NULL)
+                    {
+                        //LOG
+                        printf("Error. The file %s cannot be open", FILE_NAME);
+                        node->completed = true;
+                    }
+
+                    size_t nr_bytes = 0;
+                    pthread_mutex_lock(&mutex);
+                    nr_bytes = fwrite((char *)buffPacket, 1, position, fp);
+                    pthread_mutex_unlock(&mutex);
+
+                    if(nr_bytes == 0)
+                    {
+                        printf("Error. No bytes written to the file");
+                        node->completed = true;
+                    }
+                    printf("bytes written %d\n", nr_bytes);
+                    if(fp != NULL)
+                    {
+                        fclose(fp);
+                        fp = NULL;
+                    }
+                }
+                else if(action == action_seek)
+                {
+                    fp = fopen(FILE_NAME, "r");
+                    if(fp == NULL)
+                    {
+                        //LOG
+                        printf("Error. The file %s cannot be open", FILE_NAME);
+                        node->completed = true;
+                    }
+
+                    printf("seek %d, %d\n", seek_to.write_cmd, seek_to.write_cmd_offset);
+                    pthread_mutex_lock(&mutex);
+                    if (ioctl(fileno(fp), AESDCHAR_IOCSEEKTO, &seek_to))
+                    {
+                        printf("ioctl error \n");
+                    }
+                    pthread_mutex_unlock(&mutex);
                 }
 
-                pthread_mutex_lock(&mutex);
-                size_t nr_bytes = fwrite((char *)buffPacket, 1, position, fp);
-                pthread_mutex_unlock(&mutex);
-                if(nr_bytes == 0)
-                {
-                    printf("Error. No bytes written to the file");
-                    node->completed = true;
-                }
-                printf("bytes written %d\n", nr_bytes);
-
-                fclose(fp);
-
-                printf("open file\n");
-                fp = fopen(FILE_NAME, "r");
                 if(fp == NULL)
                 {
-                    printf("Error. The file %s cannot be open", FILE_NAME);
-                    node->completed = true;
+                    fp = fopen(FILE_NAME, "r");
                 }
                 printf("send to client\n");
                 size_t len = 0;
@@ -176,17 +228,17 @@ void* threadfunc(void* thread_param)
                 char *buff_ptr=NULL;
                 while ((read = getline(&buff_ptr, &len, fp)) != -1) 
                 {
-                    // printf("Retrieved line of length %d:\n", read);
+                    printf("send %s ", buff_ptr);
                     send(client, buff_ptr, read, 0);
                 }
                 if(buff_ptr != NULL)
                 {
                     free(buff_ptr);
                 }
-
                 if(fp != NULL)
                 {
                     fclose(fp);
+                    fp = NULL;
                 }
 
                 position = 0;
